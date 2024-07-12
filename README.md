@@ -1,314 +1,196 @@
-# ROS QR Tracker
+# ROS QR 跟踪器
 
-> QR Scanner Implementation Guide for macOS and Ubuntu
+ROS QR 跟踪器是一个将 QR 码检测和跟踪功能集成到 ROS（机器人操作系统）环境中的项目。它使用 OpenCV 进行图像处理，在 Ubuntu 和 macOS 上使用 ZBar，在 Windows 上使用 quirc 进行 QR 码检测，使机器人能够实时识别和跟踪 QR 码。
 
-## 1. 环境准备
+## 目录
 
-### macOS:
+1. [前提条件](#前提条件)
+2. [项目结构](#项目结构)
+3. [安装](#安装)
+4. [源代码差异](#源代码差异)
+5. [构建项目](#构建项目)
+6. [运行应用](#运行应用)
+7. [ROS 集成](#ros-集成)
+8. [故障排除](#故障排除)
 
-1. 安装 Homebrew：
+## 前提条件
 
-   ```
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
+- ROS（Ubuntu 20.04 使用 Noetic，Ubuntu 18.04 使用 Melodic）
+- CMake（3.10 版本或更高）
+- 支持 C++14 的 C++ 编译器
+- OpenCV
+- ZBar（Ubuntu 和 macOS）或 quirc（Windows）
 
-2. 安装依赖：
-   ```
-   brew install cmake opencv zbar
-   ```
-
-### Ubuntu:
-
-1. 更新包列表：
-
-   ```
-   sudo apt update
-   ```
-
-2. 安装依赖：
-   ```
-   sudo apt install cmake libopencv-dev libzbar-dev
-   ```
-
-## 2. 项目结构
-
-创建以下项目结构（两个系统相同）：
+## 项目结构
 
 ```
-project_root/
+ros_qr_tracker/
 ├── include/
 │   └── QRScanner.h
 ├── src/
 │   ├── QRScanner.cpp
 │   └── main.cpp
-└── CMakeLists.txt
+├── CMakeLists.txt
+└── package.xml
 ```
 
-## 3. 代码实现
+## 安装
 
-代码实现部分在 macOS 和 Ubuntu 上是相同的。
+### Ubuntu 和 macOS
 
-### QRScanner.h
+1. 安装 ROS（按照官方 ROS 安装指南进行安装）
+2. 安装依赖：
+   ```
+   sudo apt update
+   sudo apt install cmake libopencv-dev libzbar-dev ros-<distro>-cv-bridge
+   ```
+   将 `<distro>` 替换为您的 ROS 发行版（例如 noetic, melodic）
+
+### Windows
+
+1. 安装 Visual Studio（2019 或更新版本），选择"使用 C++ 的桌面开发"工作负载。
+2. 从 [cmake.org](https://cmake.org/download/) 下载并安装 CMake。
+3. 从 [opencv.org](https://opencv.org/releases/) 下载 Windows 版 OpenCV 并解压。
+4. 下载并编译 quirc 库。
+
+## 源代码差异
+
+项目的核心代码（QRScanner.h 和 QRScanner.cpp）在三个操作系统上有一些关键的差异：
+
+### 头文件 (QRScanner.h)
+
+Ubuntu 和 macOS:
 
 ```cpp
-#pragma once
-
 #include <opencv2/opencv.hpp>
 #include <zbar.h>
 
 class QRScanner {
-public:
-    QRScanner();
-    ~QRScanner();
-    void run();
-
+    // ...
 private:
     cv::VideoCapture cap;
     zbar::ImageScanner scanner;
-
-    void processFrame(cv::Mat& frame);
-    void decodeAndDraw(cv::Mat& frame, zbar::Image& image);
+    // ...
 };
 ```
 
-### QRScanner.cpp
+Windows:
 
 ```cpp
-#include "QRScanner.h"
-#include <iostream>
+#include <opencv2/opencv.hpp>
+#include <quirc.h>
 
-QRScanner::QRScanner() : cap(0) {
-    scanner.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_ENABLE, 1);
-}
+class QRScanner {
+    // ...
+private:
+    cv::VideoCapture cap;
+    struct quirc* qr;
+    // ...
+};
+```
 
-QRScanner::~QRScanner() {
-    cap.release();
-}
+### 实现文件 (QRScanner.cpp)
 
-void QRScanner::run() {
-    std::cout << "Entering QRScanner::run()" << std::endl;
-    if (!cap.isOpened()) {
-        std::cerr << "Error: Unable to open camera" << std::endl;
-        return;
-    }
-    std::cout << "Camera opened successfully" << std::endl;
+主要差异在于 QR 码检测和解码的实现：
 
-    cv::Mat frame;
-    while (true) {
-        cap >> frame;
-        if (frame.empty()) {
-            std::cerr << "Error: Unable to capture frame" << std::endl;
-            break;
-        }
-        std::cout << "Frame captured" << std::endl;
+Ubuntu 和 macOS:
 
-        processFrame(frame);
-
-        cv::imshow("Camera", frame);
-        std::cout << "Frame displayed" << std::endl;
-
-        if (cv::waitKey(1) >= 0) {
-            std::cout << "Key pressed. Exiting..." << std::endl;
-            break;
-        }
-    }
-    std::cout << "Exiting QRScanner::run()" << std::endl;
-}
-
+```cpp
 void QRScanner::processFrame(cv::Mat& frame) {
-    cv::Mat grey;
-    cv::cvtColor(frame, grey, cv::COLOR_BGR2GRAY);
-
+    // 使用 ZBar 进行 QR 码检测
     zbar::Image image(frame.cols, frame.rows, "Y800", grey.data, frame.cols * frame.rows);
-
-    decodeAndDraw(frame, image);
-}
-
-void QRScanner::decodeAndDraw(cv::Mat& frame, zbar::Image& image) {
     scanner.scan(image);
 
     for (zbar::Image::SymbolIterator symbol = image.symbol_begin(); symbol != image.symbol_end(); ++symbol) {
-        std::cout << "二维码内容: " << symbol->get_data() << std::endl;
-
-        std::vector<cv::Point> points;
-        for (int i = 0; i < symbol->get_location_size(); i++) {
-            points.emplace_back(symbol->get_location_x(i), symbol->get_location_y(i));
-        }
-
-        cv::polylines(frame, points, true, cv::Scalar(0, 255, 0), 2);
-        cv::putText(frame, symbol->get_data(), points[0], cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(255, 0, 0), 2);
+        // 处理检测到的 QR 码
+        // ...
     }
 }
 ```
 
-### main.cpp
+Windows:
 
 ```cpp
-#include "QRScanner.h"
-#include <iostream>
+void QRScanner::processFrame(cv::Mat& frame) {
+    // 使用 quirc 进行 QR 码检测
+    quirc_resize(qr, width, height);
+    uint8_t* image = quirc_begin(qr, nullptr, nullptr);
+    memcpy(image, grey.data, width * height);
+    quirc_end(qr);
 
-int main() {
-    std::cout << "Starting QR Scanner..." << std::endl;
-    QRScanner scanner;
-    std::cout << "QR Scanner initialized." << std::endl;
-    scanner.run();
-    std::cout << "QR Scanner finished." << std::endl;
-    return 0;
+    int count = quirc_count(qr);
+    for (int i = 0; i < count; i++) {
+        struct quirc_code code;
+        struct quirc_data data;
+        quirc_extract(qr, i, &code);
+        if (quirc_decode(&code, &data) == 0) {
+            // 处理检测到的 QR 码
+            // ...
+        }
+    }
 }
 ```
 
-## 4. CMake 配置
+## 构建项目
 
-### macOS:
+### Ubuntu 和 macOS
 
-```cmake
-cmake_minimum_required(VERSION 3.10)
-project(QRScanner)
+1. 创建一个 catkin 工作空间：
+   ```
+   mkdir -p ~/catkin_ws/src
+   cd ~/catkin_ws/src
+   git clone <repository-url> ros_qr_tracker
+   cd ~/catkin_ws
+   catkin_make
+   ```
 
-set(CMAKE_CXX_STANDARD 14)
+### Windows
 
-# Set OpenCV_DIR to the correct path
-set(OpenCV_DIR "/opt/homebrew/opt/opencv/lib/cmake/opencv4")
-
-# Find OpenCV
-find_package(OpenCV REQUIRED)
-if(NOT OpenCV_FOUND)
-    message(FATAL_ERROR "OpenCV not found. Please install OpenCV or set OpenCV_DIR.")
-endif()
-
-# Find ZBar
-find_path(ZBAR_INCLUDE_DIR NAMES zbar.h
-    PATHS
-    /opt/homebrew/include
-    /usr/local/include
-    /usr/include
-)
-find_library(ZBAR_LIBRARY NAMES zbar
-    PATHS
-    /opt/homebrew/lib
-    /usr/local/lib
-    /usr/lib
-)
-if(NOT ZBAR_INCLUDE_DIR OR NOT ZBAR_LIBRARY)
-    message(FATAL_ERROR "ZBar not found. Please install ZBar or set ZBAR_INCLUDE_DIR and ZBAR_LIBRARY manually.")
-endif()
-
-# Include directories
-include_directories(${OpenCV_INCLUDE_DIRS} ${ZBAR_INCLUDE_DIR} include)
-
-# Add executable
-add_executable(QRScanner src/main.cpp src/QRScanner.cpp)
-
-# Link libraries
-target_link_libraries(QRScanner ${OpenCV_LIBS} ${ZBAR_LIBRARY})
-```
-
-### Ubuntu:
-
-```cmake
-cmake_minimum_required(VERSION 3.10)
-project(QRScanner)
-
-set(CMAKE_CXX_STANDARD 14)
-
-# Find OpenCV
-find_package(OpenCV REQUIRED)
-if(NOT OpenCV_FOUND)
-    message(FATAL_ERROR "OpenCV not found. Please install OpenCV.")
-endif()
-
-# Find ZBar
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(ZBAR REQUIRED IMPORTED_TARGET zbar)
-
-# Include directories
-include_directories(${OpenCV_INCLUDE_DIRS} include)
-
-# Add executable
-add_executable(QRScanner src/main.cpp src/QRScanner.cpp)
-
-# Link libraries
-target_link_libraries(QRScanner ${OpenCV_LIBS} PkgConfig::ZBAR)
-```
-
-## 5. 编译和运行
-
-### macOS 和 Ubuntu:
-
-1. 创建 build 目录：
-
+1. 使用 CMake 生成 Visual Studio 项目：
    ```
    mkdir build && cd build
+   cmake .. -G "Visual Studio 16 2019" -A x64
+   ```
+2. 打开生成的 .sln 文件，在 Visual Studio 中构建解决方案。
+
+## 运行应用
+
+### Ubuntu 和 macOS（带 ROS）
+
+1. 源化您的工作空间：
+   ```
+   source ~/catkin_ws/devel/setup.bash
+   ```
+2. 运行节点：
+   ```
+   rosrun ros_qr_tracker ros_qr_tracker_node
    ```
 
-2. 运行 CMake：
+### macOS（不带 ROS）和 Windows
 
-   ```
-   cmake ..
-   ```
+直接运行编译生成的可执行文件。
 
-3. 编译项目：
+## ROS 集成
 
-   ```
-   make
-   ```
+本项目在 Ubuntu 和支持 ROS 的 macOS 环境下设计为 ROS 节点。它发布检测到的 QR 码信息，并订阅相机图像话题。
 
-4. 运行程序：
-   ```
-   ./QRScanner
-   ```
+主要 ROS 特性：
 
-## 6. 故障排除
+- 发布到 `/qr_tracker/detections` 话题
+- 订阅 `/camera/image_raw` 话题
 
-### macOS:
+Windows 版本通常不包含 ROS 集成。
 
-如果遇到库加载问题，请检查并更新符号链接：
+## 故障排除
 
-```
-sudo rm /opt/homebrew/opt/opencv
-sudo ln -s /opt/homebrew/Cellar/opencv/[version] /opt/homebrew/opt/opencv
-```
+- 库加载问题：检查路径设置和库文件位置。
+- Windows DLL 问题：确保所需 DLL 在系统 PATH 中或与可执行文件在同一目录。
+- ROS 问题：检查 ROS 核心是否运行，以及话题连接是否正确。
 
-更新动态库搜索路径：
+## 贡献
 
-```
-export DYLD_LIBRARY_PATH=/opt/homebrew/opt/opencv/lib:$DYLD_LIBRARY_PATH
-```
+欢迎贡献！请通过创建 issue 或提交 pull request 来帮助改进这个项目。
 
-### Ubuntu:
+## 许可
 
-如果遇到库加载问题，可以尝试更新动态库缓存：
-
-```
-sudo ldconfig
-```
-
-## 7. 系统权限
-
-### macOS:
-
-确保在系统偏好设置中授予程序摄像头访问权限。
-
-### Ubuntu:
-
-通常不需要特别的权限设置。如果遇到权限问题，可以尝试将用户添加到 video 组：
-
-```
-sudo usermod -a -G video $USER
-```
-
-然后注销并重新登录以使更改生效。
-
-## 8. 调试
-
-对于两个系统，如果程序没有显示窗口或没有输出，添加调试语句并检查每个步骤的输出。
-
-在 Ubuntu 上，如果遇到 "cannot connect to X server" 错误，确保你不是在远程 SSH 会话中运行程序，或者正确设置了 X11 转发。
-
-## 结论
-
-这个指南涵盖了在 macOS 和 Ubuntu 系统上实现 QR 码扫描器的完整过程。主要的区别在于依赖项的安装方式和 CMake 配置文件。代码实现部分在两个系统上是相同的。
-
-在 Ubuntu 上，由于包管理系统的差异，安装过程通常更简单，而且 CMake 配置文件也略有不同，主要是在查找和链接 ZBar 库的方式上。
-
-如果在任何一个系统上遇到问题，请仔细检查每个步骤，确保所有依赖项都正确安装和配置。如果问题持续，可以查看系统日志或添加更多的调试输出来定位问题。
+本项目采用 MIT 许可证。详情请见 LICENSE 文件。

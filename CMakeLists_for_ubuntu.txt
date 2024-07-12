@@ -1,0 +1,35 @@
+# Ubuntu
+cmake_minimum_required(VERSION 3.0.2)
+project(ros_qr_tracker)
+
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  cv_bridge
+  image_transport
+  sensor_msgs
+)
+
+find_package(OpenCV REQUIRED)
+find_package(ZBar REQUIRED)
+
+catkin_package(
+  INCLUDE_DIRS include
+  LIBRARIES ${PROJECT_NAME}
+  CATKIN_DEPENDS roscpp cv_bridge image_transport sensor_msgs
+  DEPENDS OpenCV ZBar
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+  ${ZBar_INCLUDE_DIRS}
+)
+
+add_executable(${PROJECT_NAME}_node src/main.cpp src/QRScanner.cpp)
+
+target_link_libraries(${PROJECT_NAME}_node
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  ${ZBar_LIBRARIES}
+)

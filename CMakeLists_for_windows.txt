@@ -1,0 +1,31 @@
+# Windows
+cmake_minimum_required(VERSION 3.10)
+project(ros_qr_tracker)
+
+set(CMAKE_CXX_STANDARD 14)
+
+# 设置 OpenCV 路径（根据你的安装位置调整）
+set(OpenCV_DIR "C:/opencv/build")
+
+# 查找 OpenCV
+find_package(OpenCV REQUIRED)
+
+# 设置 quirc 路径（如果使用 quirc 替代 ZBar）
+set(QUIRC_INCLUDE_DIR "C:/path/to/quirc/include")
+set(QUIRC_LIBRARY "C:/path/to/quirc/lib/quirc.lib")
+
+# 包含目录
+include_directories(${OpenCV_INCLUDE_DIRS} ${QUIRC_INCLUDE_DIR} include)
+
+# 添加可执行文件
+add_executable(${PROJECT_NAME} src/main.cpp src/QRScanner.cpp)
+
+# 链接库
+target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${QUIRC_LIBRARY})
+
+# 复制 OpenCV DLL 到输出目录（可选，但有助于运行）
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:opencv_world>
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>
+)
