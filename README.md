@@ -1,6 +1,6 @@
-# ROS QR 跟踪器
+# ROS QR Tracker
 
-ROS QR 跟踪器是一个将 QR 码检测和跟踪功能集成到 ROS（机器人操作系统）环境中的项目。它使用 OpenCV 进行图像处理，在 Ubuntu 和 macOS 上使用 ZBar，在 Windows 上使用 quirc 进行 QR 码检测，使机器人能够实时识别和跟踪 QR 码。
+ROS QR Tracker 是一个将 QR 码检测和跟踪功能集成到 ROS（机器人操作系统）环境中的项目。它使用 OpenCV 进行图像处理，在 Ubuntu 和 macOS 上使用 ZBar，在 Windows 上使用 quirc 进行 QR 码检测，使机器人能够实时识别和跟踪 QR 码。
 
 ## 目录
 
