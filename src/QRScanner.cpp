@@ -1,6 +1,8 @@
 #include "QRScanner.h"
+#include <chrono>
 #include <iostream>
 #include <numeric>
+#include <thread>
 
 QRScanner::QRScanner() : cap(0) {
     scanner.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_ENABLE, 1);
@@ -9,33 +11,48 @@ QRScanner::QRScanner() : cap(0) {
 QRScanner::~QRScanner() { cap.release(); }
 
 void QRScanner::run() {
-    std::cout << "Entering QRScanner::run()" << std::endl;
-    if (!cap.isOpened()) {
-        std::cerr << "Error: Unable to open camera" << std::endl;
+    if (!initializeCamera()) {
         return;
     }
-    std::cout << "Camera opened successfully" << std::endl;
 
     cv::Mat frame;
     while (true) {
-        cap >> frame;
-        if (frame.empty()) {
-            std::cerr << "Error: Unable to capture frame" << std::endl;
+        if (!captureFrame(frame)) {
             break;
         }
-        std::cout << "Frame captured" << std::endl;
 
         processFrame(frame);
-
-        cv::imshow("Camera", frame);
-        std::cout << "Frame displayed" << std::endl;
+        displayFrame(frame);
 
         if (cv::waitKey(1) == 'q') {
             std::cout << "User pressed 'q'. Exiting..." << std::endl;
             break;
         }
     }
-    std::cout << "Exiting QRScanner::run()" << std::endl;
+}
+
+bool QRScanner::initializeCamera() {
+    std::cout << "Initializing camera..." << std::endl;
+    for (int i = 0; i < 5; ++i) {
+        if (cap.open(0)) {
+            std::cout << "Camera opened successfully" << std::endl;
+            return true;
+        }
+        std::cerr << "Failed to open camera. Retrying..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    std::cerr << "Error: Unable to open camera after multiple attempts"
+              << std::endl;
+    return false;
+}
+
+bool QRScanner::captureFrame(cv::Mat &frame) {
+    cap >> frame;
+    if (frame.empty()) {
+        std::cerr << "Error: Unable to capture frame" << std::endl;
+        return false;
+    }
+    return true;
 }
 
 void QRScanner::processFrame(cv::Mat &frame) {
@@ -48,76 +65,68 @@ void QRScanner::processFrame(cv::Mat &frame) {
 
     for (zbar::Image::SymbolIterator symbol = image.symbol_begin();
          symbol != image.symbol_end(); ++symbol) {
-        std::vector<cv::Point> points;
-        for (int i = 0; i < symbol->get_location_size(); i++) {
-            points.push_back(cv::Point(symbol->get_location_x(i),
-                                       symbol->get_location_y(i)));
-        }
-
-        // 绘制 QR 码边界
-        cv::polylines(frame, points, true, cv::Scalar(0, 255, 0), 2);
-
-        // 计算 QR 码中心点
-        cv::Point center(0, 0);
-        for (const auto &point : points) {
-            center += point;
-        }
-        center.x /= points.size();
-        center.y /= points.size();
-
-        // 准备显示文本
-        std::string qr_data = symbol->get_data();
-
-        // 增大文本大小和相关参数
-        int fontFace = cv::FONT_HERSHEY_SIMPLEX;
-        double fontScale = 0.8; // 增大字体大小
-        int thickness = 2;      // 增加文本粗细
-        int baseline = 0;
-        cv::Size textSize =
-            cv::getTextSize(qr_data, fontFace, fontScale, thickness, &baseline);
-
-        cv::Point textOrg;
-        if (center.x < frame.cols / 2) {
-            textOrg = cv::Point(center.x, center.y - textSize.height);
-        } else {
-            textOrg = cv::Point(center.x - textSize.width,
-                                center.y - textSize.height);
-        }
-
-        // 确保文本在图像内
-        textOrg.x =
-            std::max(0, std::min(textOrg.x, frame.cols - textSize.width));
-        textOrg.y = std::max(textSize.height,
-                             std::min(textOrg.y, frame.rows - baseline));
-
-        // 绘制更大的半透明背景
-        cv::Rect backgroundRect(textOrg.x - 5, textOrg.y - textSize.height - 5,
-                                textSize.width + 10,
-                                textSize.height + baseline + 10);
-        cv::rectangle(frame, backgroundRect, cv::Scalar(0, 0, 0, 180),
-                      cv::FILLED);
-
-        // 绘制更大的文本
-        cv::putText(frame, qr_data, textOrg, fontFace, fontScale,
-                    cv::Scalar(255, 255, 255), thickness, cv::LINE_AA);
+        drawQRCode(frame, *symbol);
     }
 }
 
-void QRScanner::decodeAndDraw(cv::Mat &frame, zbar::Image &image) {
-    scanner.scan(image);
-
-    for (zbar::Image::SymbolIterator symbol = image.symbol_begin();
-         symbol != image.symbol_end(); ++symbol) {
-        std::cout << "二维码内容: " << symbol->get_data() << std::endl;
-
-        std::vector<cv::Point> points;
-        for (int i = 0; i < symbol->get_location_size(); i++) {
-            points.emplace_back(symbol->get_location_x(i),
-                                symbol->get_location_y(i));
-        }
-
-        cv::polylines(frame, points, true, cv::Scalar(0, 255, 0), 2);
-        cv::putText(frame, symbol->get_data(), points[0],
-                    cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(255, 0, 0), 2);
+void QRScanner::drawQRCode(cv::Mat &frame, const zbar::Symbol &symbol) {
+    std::vector<cv::Point> points;
+    for (int i = 0; i < symbol.get_location_size(); i++) {
+        points.push_back(
+            cv::Point(symbol.get_location_x(i), symbol.get_location_y(i)));
     }
+
+    cv::polylines(frame, points, true, cv::Scalar(0, 255, 0), 2);
+
+    cv::Point center = calculateCenter(points);
+    std::string qr_data = symbol.get_data();
+
+    drawQRText(frame, qr_data, center);
+}
+
+cv::Point QRScanner::calculateCenter(const std::vector<cv::Point> &points) {
+    return std::accumulate(points.begin(), points.end(), cv::Point(0, 0)) /
+           static_cast<int>(points.size());
+}
+
+void QRScanner::drawQRText(cv::Mat &frame, const std::string &qr_data,
+                           const cv::Point &center) {
+    int fontFace = cv::FONT_HERSHEY_SIMPLEX;
+    double fontScale = 0.8;
+    int thickness = 2;
+    int baseline = 0;
+    cv::Size textSize =
+        cv::getTextSize(qr_data, fontFace, fontScale, thickness, &baseline);
+
+    cv::Point textOrg = determineTextPosition(frame, center, textSize);
+
+    cv::Rect backgroundRect(textOrg.x - 5, textOrg.y - textSize.height - 5,
+                            textSize.width + 10,
+                            textSize.height + baseline + 10);
+    cv::rectangle(frame, backgroundRect, cv::Scalar(0, 0, 0, 180), cv::FILLED);
+
+    cv::putText(frame, qr_data, textOrg, fontFace, fontScale,
+                cv::Scalar(255, 255, 255), thickness, cv::LINE_AA);
+}
+
+cv::Point QRScanner::determineTextPosition(const cv::Mat &frame,
+                                           const cv::Point &center,
+                                           const cv::Size &textSize) {
+    cv::Point textOrg;
+    if (center.x < frame.cols / 2) {
+        textOrg = cv::Point(center.x, center.y - textSize.height);
+    } else {
+        textOrg =
+            cv::Point(center.x - textSize.width, center.y - textSize.height);
+    }
+
+    textOrg.x = std::max(0, std::min(textOrg.x, frame.cols - textSize.width));
+    textOrg.y = std::max(textSize.height,
+                         std::min(textOrg.y, frame.rows - textSize.height));
+
+    return textOrg;
+}
+
+void QRScanner::displayFrame(const cv::Mat &frame) {
+    cv::imshow("Camera", frame);
 }

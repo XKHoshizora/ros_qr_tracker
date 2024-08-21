@@ -1,51 +1,96 @@
-# macOS
 cmake_minimum_required(VERSION 3.10)
-project(QRScanner)
+project(QRScanner VERSION 1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Set OpenCV_DIR to the correct path
-set(OpenCV_DIR "/opt/homebrew/Cellar/opencv/4.9.0_12.reinstall/lib/cmake/opencv4")
+# OpenCV
+if(NOT DEFINED OpenCV_DIR)
+    if(APPLE)
+        set(OpenCV_DIR "/opt/homebrew/Cellar/opencv/4.10.0_3/lib/cmake/opencv4" CACHE PATH "Path to OpenCVConfig.cmake")
+    elseif(WIN32)
+        set(OpenCV_DIR "C:/opencv/build" CACHE PATH "Path to OpenCVConfig.cmake")
+    endif()
+endif()
 
-# Find OpenCV
 find_package(OpenCV REQUIRED)
 
 if(NOT OpenCV_FOUND)
     message(FATAL_ERROR "OpenCV not found. Please install OpenCV or set OpenCV_DIR.")
 endif()
 
-# Find ZBar
-find_path(ZBAR_INCLUDE_DIR NAMES zbar.h
-    PATHS
-    /opt/homebrew/include
-    /usr/local/include
-    /usr/include
-)
-find_library(ZBAR_LIBRARY NAMES zbar
-    PATHS
-    /opt/homebrew/lib
-    /usr/local/lib
-    /usr/lib
-)
+# ZBar
+if(UNIX AND NOT APPLE)
+    # Ubuntu: Use pkg-config
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(ZBAR REQUIRED IMPORTED_TARGET zbar)
 
-if(NOT ZBAR_INCLUDE_DIR OR NOT ZBAR_LIBRARY)
-    message(FATAL_ERROR "ZBar not found. Please install ZBar or set ZBAR_INCLUDE_DIR and ZBAR_LIBRARY manually.")
+    if(NOT ZBAR_FOUND)
+        message(FATAL_ERROR "ZBar not found. Please install ZBar.")
+    endif()
+else()
+    # macOS and Windows: Manual find
+    find_path(ZBAR_INCLUDE_DIR NAMES zbar.h
+        PATHS
+        /opt/homebrew/include
+        /usr/local/include
+        /usr/include
+        C:/ZBar/include
+    )
+    find_library(ZBAR_LIBRARY NAMES zbar
+        PATHS
+        /opt/homebrew/lib
+        /usr/local/lib
+        /usr/lib
+        C:/ZBar/lib
+    )
+
+    if(NOT ZBAR_INCLUDE_DIR OR NOT ZBAR_LIBRARY)
+        message(FATAL_ERROR "ZBar not found. Please install ZBar or set ZBAR_INCLUDE_DIR and ZBAR_LIBRARY manually.")
+    endif()
 endif()
 
 # Include directories
-include_directories(${OpenCV_INCLUDE_DIRS} ${ZBAR_INCLUDE_DIR} include)
+include_directories(${OpenCV_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
+
+if(UNIX AND NOT APPLE)
+    include_directories(${ZBAR_INCLUDE_DIRS})
+else()
+    include_directories(${ZBAR_INCLUDE_DIR})
+endif()
 
 # Add executable
-add_executable(QRScanner src/main.cpp src/QRScanner.cpp)
+add_executable(${PROJECT_NAME} src/main.cpp src/QRScanner.cpp)
 
 # Link libraries
-target_link_libraries(QRScanner ${OpenCV_LIBS} ${ZBAR_LIBRARY})
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${OpenCV_LIBS} PkgConfig::ZBAR)
+else()
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${OpenCV_LIBS} ${ZBAR_LIBRARY})
+endif()
 
-# Print some information
-message(STATUS "OpenCV library status:")
-message(STATUS "    version: ${OpenCV_VERSION}")
-message(STATUS "    libraries: ${OpenCV_LIBS}")
-message(STATUS "    include path: ${OpenCV_INCLUDE_DIRS}")
-message(STATUS "ZBar library status:")
-message(STATUS "    include path: ${ZBAR_INCLUDE_DIR}")
-message(STATUS "    library: ${ZBAR_LIBRARY}")
+# Set output directory
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Install rules
+install(TARGETS ${PROJECT_NAME}
+    RUNTIME DESTINATION bin
+)
+
+# Print information
+include(CMakePrintHelpers)
+cmake_print_variables(CMAKE_SYSTEM_NAME CMAKE_CXX_STANDARD)
+cmake_print_properties(
+    TARGETS ${PROJECT_NAME}
+    PROPERTIES RUNTIME_OUTPUT_DIRECTORY
+)
+cmake_print_variables(OpenCV_VERSION OpenCV_LIBS)
+
+if(UNIX AND NOT APPLE)
+    cmake_print_variables(ZBAR_VERSION ZBAR_LIBRARIES)
+else()
+    cmake_print_variables(ZBAR_INCLUDE_DIR ZBAR_LIBRARY)
+endif()

@@ -1,3 +1,5 @@
+// main.cpp
+
 #include "QRScanner.h"
 #include <iostream>
 
